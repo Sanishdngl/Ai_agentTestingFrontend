@@ -8,18 +8,19 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [userId] = useState(() => uuidv4());
   const chatEndRef = useRef(null);
-  const [aiTyping, setAiTyping] = useState(""); // typing animation
+  const [aiTyping, setAiTyping] = useState("");
 
-  // Scroll to bottom when messages update
+  // 🌐 BACKEND URL (Render)
+  const API_URL = "https://ai-agenttestingbackend.onrender.com";
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 🧠 Load chat history on startup
   useEffect(() => {
     const loadHistory = async () => {
       try {
-        const res = await axios.post("http://localhost:5000/api/history", { userId });
+        const res = await axios.post(`${API_URL}/api/history`, { userId });
         setMessages(res.data.messages || []);
       } catch (err) {
         console.error("Error loading history:", err);
@@ -28,7 +29,6 @@ function App() {
     loadHistory();
   }, [userId]);
 
-  // ✨ Typing animation function
   const typeMessage = (text, callback) => {
     let index = 0;
     setAiTyping("");
@@ -37,9 +37,9 @@ function App() {
       index++;
       if (index >= text.length) {
         clearInterval(interval);
-        callback(); // finished typing
+        callback();
       }
-    }, 25); // typing speed (ms per character)
+    }, 25);
   };
 
   const sendPrompt = async () => {
@@ -51,25 +51,23 @@ function App() {
     setLoading(true);
 
     try {
-      const res = await axios.post("http://localhost:5000/api/ask", {
+      const res = await axios.post(`${API_URL}/api/ask`, {
         prompt: input,
         userId,
       });
 
       const reply = res.data.reply;
 
-      // Typing animation for AI reply
       typeMessage(reply, () => {
         setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
         setAiTyping("");
         setLoading(false);
       });
     } catch (error) {
-      const errorMessage = {
-        role: "assistant",
-        content: "⚠️ Sorry, something went wrong.",
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "⚠️ Sorry, something went wrong." },
+      ]);
       setLoading(false);
     }
   };
@@ -101,7 +99,6 @@ function App() {
           </div>
         ))}
 
-        {/* Show typing animation */}
         {aiTyping && (
           <div style={{ ...styles.message, ...styles.aiMsg }}>
             <div style={styles.msgRole}>🤖 AI</div>

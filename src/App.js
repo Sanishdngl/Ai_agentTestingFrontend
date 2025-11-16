@@ -6,12 +6,23 @@ function App() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [userId] = useState(() => uuidv4());
+  const [userId] = useState(() => {
+    // Store userId in localStorage to persist across page refreshes
+    const storedUserId = localStorage.getItem('userId');
+    if (storedUserId) return storedUserId;
+    
+    const newUserId = uuidv4();
+    localStorage.setItem('userId', newUserId);
+    return newUserId;
+  });
   const chatEndRef = useRef(null);
   const [aiTyping, setAiTyping] = useState("");
 
-  // 🌐 BACKEND URL (Render)
+  // ✅ BACKEND URL (Render)
   const API_URL = "https://ai-agenttestingbackend.onrender.com";
+
+  // Configure axios to handle credentials
+  axios.defaults.withCredentials = true;
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -20,12 +31,27 @@ function App() {
   useEffect(() => {
     const loadHistory = async () => {
       try {
-        const res = await axios.post(`${API_URL}/api/history`, { userId });
-        setMessages(res.data.messages || []);
+        console.log("Loading chat history for user:", userId);
+        const res = await axios.post(`${API_URL}/api/history`, 
+          { userId },
+          { 
+            timeout: 10000,
+            withCredentials: true 
+          }
+        );
+        
+        if (res.data && res.data.messages) {
+          setMessages(res.data.messages);
+          console.log("History loaded successfully");
+        }
       } catch (err) {
         console.error("Error loading history:", err);
+        if (err.code === "ERR_NETWORK") {
+          console.log("Network error - please check backend connection");
+        }
       }
     };
+    
     loadHistory();
   }, [userId]);
 
@@ -51,10 +77,16 @@ function App() {
     setLoading(true);
 
     try {
-      const res = await axios.post(`${API_URL}/api/ask`, {
-        prompt: input,
-        userId,
-      });
+      const res = await axios.post(`${API_URL}/api/ask`, 
+        {
+          prompt: input,
+          userId,
+        },
+        {
+          timeout: 30000,
+          withCredentials: true
+        }
+      );
 
       const reply = res.data.reply;
 
@@ -64,9 +96,10 @@ function App() {
         setLoading(false);
       });
     } catch (error) {
+      console.error("API Error:", error);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "⚠️ Sorry, something went wrong." },
+        { role: "assistant", content: "⚠️ Sorry, something went wrong. Please try again." },
       ]);
       setLoading(false);
     }
@@ -79,11 +112,28 @@ function App() {
     }
   };
 
+  const clearChat = () => {
+    setMessages([]);
+    localStorage.removeItem('userId');
+    window.location.reload();
+  };
+
   return (
     <div style={styles.container}>
-      <h1 style={styles.header}>🤖 AI Agent with Chat History</h1>
+      <div style={styles.header}>
+        <h1>🤖 AI Agent with Chat History</h1>
+        <button onClick={clearChat} style={styles.clearButton}>
+          Clear Chat
+        </button>
+      </div>
 
       <div style={styles.chatBox}>
+        {messages.length === 0 && (
+          <div style={styles.welcomeMessage}>
+            Welcome! Start a conversation with the AI assistant.
+          </div>
+        )}
+        
         {messages.map((msg, i) => (
           <div
             key={i}
@@ -102,7 +152,7 @@ function App() {
         {aiTyping && (
           <div style={{ ...styles.message, ...styles.aiMsg }}>
             <div style={styles.msgRole}>🤖 AI</div>
-            <div>{aiTyping}<span className="cursor">▋</span></div>
+            <div>{aiTyping}<span style={styles.cursor}>▋</span></div>
           </div>
         )}
 
@@ -117,8 +167,9 @@ function App() {
           onKeyDown={handleKeyDown}
           placeholder="Type your message and press Enter..."
           style={styles.input}
+          disabled={loading}
         />
-        <button onClick={sendPrompt} disabled={loading} style={styles.button}>
+        <button onClick={sendPrompt} disabled={loading || !input.trim()} style={styles.button}>
           {loading ? "Thinking..." : "Send"}
         </button>
       </div>
@@ -137,8 +188,19 @@ const styles = {
     height: "100vh",
   },
   header: {
-    textAlign: "center",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: "1rem",
+  },
+  clearButton: {
+    padding: "0.5rem 1rem",
+    borderRadius: "8px",
+    border: "none",
+    backgroundColor: "#dc3545",
+    color: "white",
+    cursor: "pointer",
+    fontSize: "0.9rem",
   },
   chatBox: {
     flexGrow: 1,
@@ -147,6 +209,13 @@ const styles = {
     borderRadius: "8px",
     padding: "1rem",
     background: "#f9f9f9",
+    marginBottom: "1rem",
+  },
+  welcomeMessage: {
+    textAlign: "center",
+    color: "#666",
+    fontStyle: "italic",
+    padding: "2rem",
   },
   message: {
     marginBottom: "1rem",
@@ -154,6 +223,7 @@ const styles = {
     borderRadius: "8px",
     maxWidth: "75%",
     whiteSpace: "pre-wrap",
+    wordWrap: "break-word",
   },
   userMsg: {
     alignSelf: "flex-end",
@@ -168,10 +238,10 @@ const styles = {
   msgRole: {
     fontWeight: "bold",
     marginBottom: "0.25rem",
+    fontSize: "0.9rem",
   },
   inputContainer: {
     display: "flex",
-    marginTop: "1rem",
     gap: "0.5rem",
   },
   input: {
@@ -180,6 +250,7 @@ const styles = {
     border: "1px solid #ccc",
     padding: "0.75rem",
     resize: "none",
+    fontFamily: "inherit",
   },
   button: {
     padding: "0.75rem 1.25rem",
@@ -188,7 +259,20 @@ const styles = {
     backgroundColor: "#007bff",
     color: "white",
     cursor: "pointer",
+    minWidth: "80px",
+  },
+  cursor: {
+    animation: "blink 1s infinite",
   },
 };
+
+// Add CSS for blinking cursor
+const styleSheet = document.styleSheets[0];
+styleSheet.insertRule(`
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+`, styleSheet.cssRules.length);
 
 export default App;
